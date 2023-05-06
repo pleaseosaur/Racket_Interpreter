@@ -1,0 +1,105 @@
+\documentclass[letterpaper,12pt]{article}
+\nonstopmode
+
+% Packages
+%
+\usepackage[margin=1in]{geometry}
+\usepackage{fancyvrb,amsmath}
+\usepackage{multicol}
+
+% Common Declarations
+%
+% Make sure you change the author in common.tex
+%
+\input{../common.tex}
+\fvset{frame=single,fontsize=\small}
+\setlength{\columnsep}{2em}
+
+% Local Declarations
+% 
+\title{CSCI 301, Lab \# 5}
+\author{\term}
+
+% The document
+%
+\begin{document}
+
+\maketitle
+\begin{multicols}{2}
+
+  \paragraph{Goal:} This is the third in a series of labs that will build an
+  interpreter for Scheme.  In this lab we will add the \verb|let| special form.
+
+  \paragraph{Unit tests:}
+  At a minimum, your program must pass the unit tests found in the
+  file \verb|lab05-test.rkt|.  Place this file in the same folder
+  as your program, and run it;  there should be no output.  Include
+  your unit tests in your submission.
+
+  \paragraph{Let:}
+  
+  The special form \verb|let| has the following syntax, with a typical example
+  shown at right.  It consists of a list beginning with the symbol \verb|let|,
+  then a list of symbol-value lists, and finally a single expression.  You will
+  expand your \verb|evaluate-special-form| function to handle this case, and
+  also add code to the \verb|special-form?| boolean to recognize a \verb|let|
+  form.  No other changes need be made to your interpreter.
+  \begin{multicols}{2}
+\begin{Verbatim}
+(let 
+  ((sym1 exp1)
+   (sym2 exp2)
+   ...       )
+  expr)
+\end{Verbatim}
+\begin{Verbatim}
+(let 
+  ((x (+ 2 2))
+   (y x)
+   (z (* 3 3)))
+  (+ a x y z))
+\end{Verbatim}
+  \end{multicols}
+  To evaluate this form, in an environment \verb|e1|, we evaluate all the forms,
+  \verb|exp1|, \verb|exp2|, \ldots in the environment \verb|e1|.  Note that this
+  means \verb|y| will get the value \verb|x| had in \verb|e1|, not 4.  Let's say
+  that in \verb|e1| \verb|x| had the value 10 and \verb|a| had the value 20.
+  
+  We now have a list of variables, \verb|(x y z)|, and a list of values,
+  \verb|(4 10 9)|.  We make a new environment by adding these variables and
+  their values to the {\em front} of \verb|e1|.
+
+  The single expression at the end of a \verb|let| form is now evaluated in this
+  {\em new, extended} environment.  Thus, the final value will be
+  \verb|(+ a x y z) => (+ 20 4 10 9) => 43|.  Make sure you understand this
+  example before proceeding.
+
+  It is also important to understand that this new, extended environment, is
+  {\em only } used to evaluate the \verb|expr| embedded in the \verb|let| form.
+  After the \verb|let| form is evaluated, you go back to using the old
+  environment.  For example:
+\begin{Verbatim}
+(let ((x 10)) 
+     (+ (let ((x 20)) (+ x x)) x))
+=>  50
+\end{Verbatim}
+  In this example, we bind \verb|x| to 10, then create a local environment in
+  which \verb|x| is bound to 20, in this new environment we evaluate
+  \verb|(+ x x)| to get 40, and then, outside of the new environment we evaluate
+  \verb|x| again, getting 10, which is added to 40 to get 50.
+
+  A slightly trickier example is this:
+\begin{Verbatim}[frame=single]
+(let ((x 10)) 
+   (+ (let ((x (+ x x))) (+ x x)) x))
+\end{Verbatim}
+  What do you think this will evaluate to?  Enter it into the Racket interpreter
+  to see if you really understand.  Your interpreter should get the same result.
+
+  In your implementation, all this tricky scoping will be handled by the fact
+  that the extended environment in the \verb|let| form is {\em only} used to
+  evaluate the included \verb|expr|.  It should not be visible outside of
+  handling the \verb|let| form.
+
+\end{multicols}
+\end{document}

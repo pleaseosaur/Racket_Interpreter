@@ -1,0 +1,178 @@
+\documentclass[letterpaper,12pt]{article}
+\nonstopmode
+
+% Packages
+%
+\usepackage[margin=1in]{geometry}
+\usepackage{fancyvrb,amsmath}
+\usepackage{multicol}
+\usepackage{xcolor}
+
+% Common Declarations
+%
+% Make sure you change the author in common.tex
+%
+\input{../common.tex}
+\fvset{frame=single}
+
+
+% Local Declarations
+% 
+\title{CSCI 301, Lab \# 8}
+\author{\term}
+\date{}
+
+% The document
+%
+\begin{document}
+\maketitle
+
+\paragraph{Goal:} This is the last in a series of labs that will
+build an interpreter for Scheme.  In this lab we will build our own
+parser for Scheme expressions using a simple LL(1) grammar to guide
+us. 
+
+\paragraph{Unit tests:}
+At a minimum, your program must pass the unit tests found in the file
+\texttt{lab8-test.rkt}.  Place this file in the same folder as
+\texttt{parse.rkt}, and also \texttt{eval.rkt}, and run it; there should be no
+output.  Include your unit tests and both labs in your submission.
+
+\paragraph{From strings to expressions.}
+
+Up until now we let {\bf Racket} handle the conversion from characters to lists,
+that is, changing the characters you typed into a file, for example,
+\verb|'(+ 1 2)|, into an actual Scheme list structure with \texttt{car}s and
+\texttt{cdr}s.  \textbf{Racket} has a builtin expression reader which does this
+automatically.
+
+Now we are going to do that part ourselves.  Our unit test file, for example,
+can look like this:
+\begin{Verbatim}[frame=single]
+(require rackunit "parse.rkt" "eval.rkt")
+(define e2 (list (list '+ +)))
+(check equal? (parse "(+ 1 2)") 
+              '((+ 1 2)))
+(check equal? (evaluate (first (parse "(+ 1 2)")) e2)
+              3)
+\end{Verbatim}
+Note that your interpreter will be the one defined in \texttt{eval.rkt}, and
+will provide \texttt{evaluate}, and the parser will be defined in
+\texttt{parse.rkt} and provide \texttt{parse}.  The parser and the evaluator
+should be completely independent.
+
+
+\paragraph{Input}
+We will use the same strategy for input that we used in the RPN calculator.
+Thus, a string will be converted to a list of characters.  That list will be
+passed between functions representing the variables of the grammar.  The
+functions will consume the input list and produce a list that can be passed to
+\texttt{evaluate}.  
+
+\paragraph{LL(1) parsing for Scheme}
+
+The grammar for our Scheme is incredibly simple:
+\begin{align*}
+  L &\rightarrow \textvisiblespace L | EL | \epsilon  &\mbox{Expression List}\\
+  E &\rightarrow DN \mid AS \mid (\ L\ ) &\mbox{Expression}\\
+  S &\rightarrow AS \mid \epsilon &\mbox{Symbol}\\
+  N &\rightarrow DN \mid \epsilon &\mbox{Number}\\
+  D &\rightarrow 0 \mid 1 \mid 2 \mid 3 \mid ... &\mbox{Digit}\\
+  A &\rightarrow a \mid b \mid c \mid d \mid ... &\mbox{Symbolic}\\
+\end{align*}
+%
+There are a couple of things to note with the grammar shown above.  First, the
+visible-whitespace character is ``\textvisiblespace''.  Second it is not,
+strictly speaking LL(1); we will fix this in the first and follow sets.
+Finally, as in our RPN calculator, we used some builtin Scheme procedures to
+classify characters.  For example, \texttt{char-numeric?} will identify digits,
+\texttt{char-whitespace?} will identify whitespace.
+
+For identifying characters we can use in a symbol (called ``Symbolic'' in the
+grammar above), we want to include just about everything except whitespace and
+the two parentheses.  This is easy to define:
+\begin{Verbatim}[frame=single]
+(define char-symbolic?
+  (lambda (char) (and (not (char-whitespace? char))
+                    (not (eq? char #\())
+                    (not (eq? char #\))))))  
+\end{Verbatim}
+We are interested in five kinds of characters: \verb|#\(|, \verb|#\)|,
+\verb|char-numeric?|, \verb|char-symbolic?|, and~\verb|char-whitespace?|
+
+
+\begin{center}
+  \begin{tabular}[t]{l|l|l|l}
+    &Null&First&Follow\\\hline
+    L&yes&\{(,\textvisiblespace,0..9,a..\}&\{)\}\\
+    E&no &\{(,0..9,a..\}&\{(,),\textvisiblespace,0..9,a..,\$\}\\
+    S&yes&\{a..\}&\{(,),\textvisiblespace,0..9,\textbf{a..},\$\}\\
+    N&yes&\{0..9\}&\{(,),\textvisiblespace,\textbf{0..9},a..,\$\}\\
+    D&no &\{0..9\}&\{(,),\textvisiblespace,0..9,a..,\$\}\\
+    A&no &\{a..\}&\{(,),\textvisiblespace,0..9,a..,\$\}\\
+  \end{tabular}
+\end{center}
+
+Notice how S and N are nullable and that the intersection of their First and
+Follow sets are not empty?  This means that the grammar is not LL(1).
+
+We are faced with two options: make the grammar more complicated or directly
+modify the First and Follow sets.  Let's modify the sets.
+
+By removing the common symbols from the follow set, the resulting parser will
+generate the longest symbol or number.  That is, a digit cannot directly follow
+an N.  Similarly, a symbol character cannot follow an S.  The modified sets look
+like this:
+
+\begin{center}
+  \begin{tabular}[t]{l|l|l|l}
+    &Null&First&Follow\\\hline
+    L&yes&\{(,\textvisiblespace,0..9,a..\}&\{)\$\}\\
+    E&no &\{(,0..9,a..\}&\{(,),\textvisiblespace,0..9,a..,\$\}\\
+    S&yes&\{a..\}&\{(,),\textvisiblespace,0..9,\$\}\\
+    N&yes&\{0..9\}&\{(,),\textvisiblespace,a..,\$\}\\
+    D&no &\{0..9\}&\{(,),\textvisiblespace,0..9,a..,\$\}\\
+    A&no &\{a..\}&\{(,),\textvisiblespace,0..9,a..,\$\}\\
+  \end{tabular}
+\end{center}
+
+
+Write a parser following the same pattern as we did for the RPN calculator.
+There are only a couple of significant differences between the calculator and
+this parser.
+
+The $E\rightarrow (L)$ rule creates a nested list.  This is similar to the way
+that \verb|rpn-parser.rkt| handled numbers.  This was wrong for numbers, but is
+right for lists.  
+
+The symbols in the RPN parser were a handful of single characters.  Symbols in
+scheme must be at least a single character, but can be longer.  They cannot have
+embedded numbers nor can they have embedded parentheses.  You might have to do
+something similar to how we handled integers in the calculator parser.  
+
+
+\paragraph{Read-Eval-Print Loop: optional}
+The read-eval-print loop is the main body of an interactive interpreter.  
+Note that we are missing special forms that modify the environment (e.g.,
+\texttt{define}).
+\begin{Verbatim}
+(define repl (lambda ()
+    (map (lambda (exp) (display (evaluate exp env))) (parse (read-line)))
+    (newline)
+    (repl)
+    )
+  )
+\end{Verbatim}
+
+\paragraph{Program files: optional}
+
+Note that our parser only handles strings typed in, but that we
+usually want an interpreter to interpret program files, not strings.
+The solution is pretty trivial:
+check out the {\bf Racket} procedure {\tt file->string}.
+
+With a little work you could get your interpreter to interpret itself...
+
+
+\end{document}
+

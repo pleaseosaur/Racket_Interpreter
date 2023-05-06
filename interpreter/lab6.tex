@@ -1,0 +1,213 @@
+\documentclass[letterpaper,12pt]{article}
+\nonstopmode
+
+% Packages
+%
+\usepackage[margin=1in]{geometry}
+\usepackage{fancyvrb,amsmath}
+\usepackage{multicol}
+\usepackage{xcolor}
+
+% Common Declarations
+%
+% Make sure you change the author in common.tex
+%
+\input{../common.tex}
+\fvset{frame=single,fontsize=\small}
+\setlength{\columnsep}{2em}
+
+% Local Declarations
+% 
+\title{CSCI 301, Lab \# 5}
+\author{\term}
+
+% The document
+%
+\begin{document}
+
+\maketitle
+  \paragraph{Goal:} This is the fourth in a series of labs that will build an
+  interpreter for Scheme.  In this lab we will add the {\tt lambda} special
+  form.
+
+  \paragraph{Unit tests:} At a minimum, your program must pass the unit tests
+  found in the file {\tt lab6-test.rkt}.  Place this file in the same folder as
+  your program, and run it; there should be no output.  Include your unit tests
+  in your submission.
+
+  \paragraph{Lambda creates a closure:} If you consider a simple application of
+  a {\tt lambda} form, it is a lot like {\tt let}, that you did last week:
+\begin{Verbatim}
+((lambda (x y) (+ x y)) (+ 2 2) (+ 3 3)) 
+   <=> (let ((x (+ 2 2)) (y (+ 3 3))) (+ x y))
+\end{Verbatim}
+  In each case, a list of arguments, \texttt{((+ 2 2) (+ 3 3))} is evaluated
+  giving the list of values \texttt{(4 6)}, then
+  the list of variables, \texttt{(x y)}, is bound to the list
+  of values \texttt{(4 6)}, and this is used to extend the environment,
+  and then the expression, \texttt{(+ x y)}, is evaluated in the extended
+  environment, resulting in a value of 10 for the whole expression.
+
+  If this were the only use of \texttt{lambda}, then it would just be a
+  different syntax for \texttt{let}.
+
+  However, the \texttt{lambda} is actually more powerful.  A \texttt{lambda} can
+  be created in one environment, and applied in another.  Consider the following
+  code:
+\begin{Verbatim}[frame=single]
+(let ((a 10) (f (let ((a 20)) (lambda (x) (+ a x)))))
+     (f 30))
+\end{Verbatim}
+  The body of the function \texttt{f} is \texttt{(+ a x)}.  The function was
+  called with argument 30, so \texttt{x} should be bound to 30.  But what is
+  \texttt{a}?  Is the answer $10+30$ or $20+30$?
+
+  You can check it out with Racket, but hopefully you can see that it
+  \emph{should} be $20 + 30$.  When the \texttt{lambda} form was
+  \emph{evaluated}, \texttt{a} was bound to 20.  When the resulting function,
+  bound to \texttt{f}, was \emph{applied}, \texttt{a} was 10.
+
+  The solution to this is that a \texttt{lambda} form creates a special data
+  structure called a \emph{closure}.  The closure is what is bound to \texttt{f},
+  in the above example.  A closure consists of three things:
+  \begin{enumerate}
+  \item A list of symbols (the variables to be bound when it is called).
+  \item An expression to be evaluated.
+  \item A stored environment, the environment in which the closure was
+    \emph{created}.
+  \end{enumerate}
+  The first two are easy to understand.  For example, in the \texttt{lambda}
+  form: \texttt{(lambda (x y) (+ x y))}, the list of symbols is \texttt{(x y)}
+  and the expression is \texttt{(+ x y)}.  The third thing is the environment
+  that was in effect when the closure was created.  In other words, when the
+  \texttt{lambda} form was \emph{evaluated}.  A closure, when created, stores
+  this third thing, the current environment, along with the list of variables
+  and the body.
+
+  Because this is lisp, we will represent closures simply as lists containing
+  the three items.  Since this is going to be a data type, let's go ahead and
+  define all the functions that will use closures, a creator, a predicate, and
+  three accessors:
+\begin{Verbatim}[frame=single,label=Closure Data Type]
+(define closure (lambda (vars body env) (list 'closure vars body env)))
+(define closure? (lambda (clos) (and (pair? clos) (eq? (car clos) 'closure))))
+(define closure-vars cadr)
+(define closure-body caddr)
+(define closure-env cadddr)  
+\end{Verbatim}
+  Make sure in your code you {\em only} use these procedures to handle closures.
+  Respect the interface!  (If you're interested, you can look up \textbf{Racket}
+  {\em structures}, which could have been used instead of lists.)  Note that
+  since closures are just lists, we don't need to write any special printing
+  procedures to look at them.  They print nicely as lists already.
+
+  So, \texttt{lambda} is the new special form for this assignment.  Evaluating a
+  lambda form simply creates a closure out of the arguments, the body, and the
+  current environment.  For example, if the environment \texttt{e1} is created
+  like this:
+\begin{Verbatim}[commandchars=\\\{\}]
+(define e1{\color{blue} '((x 5) (y 8) (z 10))} )
+\end{Verbatim}
+  then the following closures would look like this:
+\begin{Verbatim}[frame=single,commandchars=\\\{\}]
+(evaluate  '(lambda (x) (+ x y)) e1)
+=> (closure (x) (+ x y) 
+     {\color{blue}((x 5) (y 8) (z 10))})
+(evaluate  '(lambda (a b c) 
+              (cons a (list b c))) e1)
+=>  (closure (a b c) (cons a (list b c)) 
+       {\color{blue}((x 5) (y 8) (z 10)})
+(evaluate '(let ((x 10)) 
+     (lambda (foo) (+ foo foo)) e1)
+=>  (closure (foo) (+ foo foo) ((x 10) 
+        {\color{blue}(x 5) (y 8) (z 10))})
+\end{Verbatim}
+  Note that the closure remembers the environment in which it was created, even
+  if that environment was a special environment, for example, like the one
+  created by a \texttt{let} form.
+
+  \paragraph{Applying lambda to some arguments:}
+  Now that we know how to evaluate a \texttt{lambda} form, we need to know how
+  to {\em apply} a lambda form to some arguments.  For example, consider the
+  form
+\begin{Verbatim}[frame=single]
+((lambda (x y) (+ x y)) 10 20)
+\end{Verbatim}
+  This is {\em not} a \texttt{lambda} form.  It is not even a special form!  It
+  is the {\em application} of the \texttt{lambda} form \texttt{(lambda (x y) (+
+    x y))} to the arguments, \texttt{(10 20)}.  We will evaluate this just like
+  any other function application!
+
+  If we follow our rules for evaluating things that are not special forms, we
+  would evaluate each of the items in the list (the \texttt{lambda} form, the 10
+  and the 20), getting this list
+  (printing the closure as a list):\\
+  \begin{tabular}{|rcccl|}\hline
+    \texttt{(}&\texttt{(lambda (x y) (+ x y))} & 10 & 20 & \texttt{)}\\
+              &  \ensuremath{\Downarrow} & \ensuremath{\Downarrow} & \ensuremath{\Downarrow} &\\
+    \texttt{(} & \texttt{(closure (x y) (+ x y) {\color{blue}((x 5) (y 8) (z
+                 10) ...)}) } & 10 &  20& \texttt{)}\\\hline
+  \end{tabular}\\
+  And now we have to apply the closure to the list of arguments.  Up to
+  now, we've only been applying Racket built-in functions to their
+  arguments, using the Racket \texttt{apply} function.  However, Racket
+  doesn't understand our closures.  We have to figure out how to apply
+  them ourselves.
+
+  So, we will add a new \texttt{apply-function} procedure to our interpreter.
+  When evaluating a normal (non-special-form) list, we evaluate each item in the
+  list, and then call \texttt{apply-function} with just two arguments: the
+  \texttt{car} and the \texttt{cdr} of our evaluated list of items, the function
+  and its arguments.
+
+  \texttt{apply-function} will look at its first argument.  If it is a \texttt{
+    procedure?}, then it calls the Racket built-in \texttt{apply} function.  If
+  it is a \texttt{closure?}, it calls \texttt{apply-closure}.  Otherwise it
+  should throw an error, reporting an unknown function type.
+
+  \texttt{apply-closure} takes two arguments, a closure and a list of values.
+  The closure has three components: the variables, the body, and a saved
+  environment.  This procedure extends the {\em saved} environment by appending
+  the variables and their values to the front (just like \texttt{let} did), and
+  then evaluates the body of the closure in this new, extended environment.
+
+  Note that \texttt{let} is not the only form that introduces a local
+  environment, now \texttt{lambda} does, too.  Consider the following code:
+\begin{Verbatim}[frame=single]
+(let ((f (lambda (a) (lambda (b) (+ a b)))))
+  (let ((g (f 10))
+        (h (f 20)))
+    (list (g 100) (h 100))))  
+\end{Verbatim}
+  Here, the result of applying \texttt{f} to 10 creates a closure in an
+  environment in which \texttt{a} is bound to 10.  When we apply \texttt{f} to
+  20, we create a closure in an environment in which \texttt{a} is bound to 20.
+  What should be the result of the call?  Does your interpreter get that result?
+
+  Note also that we can't define recursive functions directly using \texttt{
+    let}.  What would happen if we tried this?
+\begin{Verbatim}[frame=single]
+  (let ((f
+           (lambda (n)
+              (if (= n 0)
+                  1
+                  (* n (f (- n 1)))))))
+      (f 5))
+\end{Verbatim}
+  Try this in the \textbf{Racket} interpreter, and also in your interpreter.  In
+  our next lab, we will define the \texttt{letrec} special form to remedy this.
+
+  However, we don't really need to wait for that to define recursive functions.
+  We just have to be a little more clever.  For example, what would the
+  following do in \textbf{Racket}?  What does it do in your interpreter?
+\begin{Verbatim}[frame=single]
+(let ((f
+       (lambda (f n)
+         (if (= n 0)
+             1
+             (* n (f f (- n 1)))))))
+  (f f 5))
+\end{Verbatim}
+\end{document}
+
+
